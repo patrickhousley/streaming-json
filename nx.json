@@ -1,5 +1,31 @@
 {
+  "pluginsConfig": {
+    "@nx/js": {
+      "analyzeSourceFiles": true
+    }
+  },
   "extends": "nx/presets/npm.json",
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "nxCloudAccessToken": "NzY4NmRiM2ItZmEwMy00MjkxLWE2ZWItMTFlMjkxYzg1YjBlfHJlYWQ="
+  "nxCloudAccessToken": "NzY4NmRiM2ItZmEwMy00MjkxLWE2ZWItMTFlMjkxYzg1YjBlfHJlYWQ=",
+  "targetDefaults": {
+    "@nx/js:tsc": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["default", "^default"]
+    }
+  },
+  "plugins": [
+    {
+      "plugin": "@nx/eslint/plugin",
+      "options": {
+        "targetName": "lint"
+      }
+    },
+    {
+      "plugin": "@nx/jest/plugin",
+      "options": {
+        "targetName": "test"
+      }
+    }
+  ]
 }
