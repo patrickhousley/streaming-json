@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
+    "build": "nx run-many --target=build",
     "format": "nx format:write",
     "format:check": "nx format:check",
     "lint": "npm run lint:affected",
@@ -11,6 +12,7 @@
     "test": "npm run test:affected",
     "test:all": "nx run-many --target=test",
     "test:affected": "nx affected --target=test",
+    "test:coverage": "nx run-many --target=test --coverage",
     "prepare": "husky install"
   },
   "private": true,
