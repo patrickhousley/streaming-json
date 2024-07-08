@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker'
 import { MemoryParser } from './memory-parser'
-import { AllowedWhitespaceToken } from './charset'
+import { AllowedWhitespaceToken, Token } from './charset'
 import { ParserError } from './parser-error'
 
 it('should stop processing when passed true in subsequent call to next', () => {
@@ -133,7 +133,7 @@ describe('JSON opening', () => {
   })
 })
 
-describe('string literal', () => {
+describe('strings', () => {
   it('should properly close a string literal', () => {
     const parser = new MemoryParser('""')
     const iterator = parser.read()
@@ -229,6 +229,34 @@ describe('string literal', () => {
       expect(err).toBeInstanceOf(ParserError)
       expect((err as ParserError).message).toEqual(`Unterminated string in JSON at position 4`)
     }
+  })
+
+  it('should support control characters in strings %s', () => {
+    const input = '[]{}:,"\\'
+    const expected = [91, 93, 123, 125, 58, 44, 92, 34, 92, 92]
+    const parser = new MemoryParser(JSON.stringify(input))
+    const iterator = parser.read()
+
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'STRING_START' },
+    })
+    for (let index = 0; index < expected.length; index++) {
+      expect(iterator.next()).toEqual({
+        done: false,
+        value: {
+          event: 'CHARACTER',
+          charCode: expected[index],
+        },
+      })
+    }
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'STRING_END' },
+    })
+    expect(iterator.next()).toEqual({
+      done: true,
+    })
   })
 })
 
@@ -742,12 +770,13 @@ describe('arrays', () => {
     iterator.next()
     iterator.next()
     iterator.next()
+    iterator.next()
 
     try {
       expect(iterator.next()).toThrow()
     } catch (err) {
       expect(err).toBeInstanceOf(ParserError)
-      expect((err as ParserError).message).toEqual('Unterminated string in JSON at position 5')
+      expect((err as ParserError).message).toEqual('Unterminated string in JSON at position 6')
     }
   })
 
@@ -768,6 +797,42 @@ describe('arrays', () => {
       expect(err).toBeInstanceOf(ParserError)
       expect((err as ParserError).message).toEqual(`Unexpected token '${input}' at position 1`)
     }
+  })
+
+  it('should support control characters in strings %s', () => {
+    const input = '[]{}:,"\\'
+    const expected = [91, 93, 123, 125, 58, 44, 92, 34, 92, 92]
+    const parser = new MemoryParser(JSON.stringify([input]))
+    const iterator = parser.read()
+
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'ARRAY_START' },
+    })
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'STRING_START' },
+    })
+    for (let index = 0; index < expected.length; index++) {
+      expect(iterator.next()).toEqual({
+        done: false,
+        value: {
+          event: 'CHARACTER',
+          charCode: expected[index],
+        },
+      })
+    }
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'STRING_END' },
+    })
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'ARRAY_END' },
+    })
+    expect(iterator.next()).toEqual({
+      done: true,
+    })
   })
 })
 
@@ -1083,4 +1148,48 @@ describe('objects', () => {
       }
     },
   )
+
+  it('should support control characters in strings %s', () => {
+    const input = '[]{}:,"\\'
+    const expected = [91, 93, 123, 125, 58, 44, 92, 34, 92, 92]
+    const parser = new MemoryParser(JSON.stringify({ foo: input }))
+    const iterator = parser.read()
+
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'OBJECT_START' },
+    })
+
+    iterator.next()
+    iterator.next()
+    iterator.next()
+    iterator.next()
+    iterator.next()
+    iterator.next()
+
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'STRING_START' },
+    })
+    for (let index = 0; index < expected.length; index++) {
+      expect(iterator.next()).toEqual({
+        done: false,
+        value: {
+          event: 'CHARACTER',
+          charCode: expected[index],
+        },
+      })
+    }
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'STRING_END' },
+    })
+    expect(iterator.next()).toEqual({
+      done: false,
+      value: { event: 'OBJECT_END' },
+    })
+    expect(iterator.next()).toEqual({
+      done: true,
+    })
+  })
 })

@@ -37,6 +37,7 @@ export class MemoryParser extends Parser {
   *read(): Generator<ParserEvent, void, boolean> {
     const eventStack: ParserEvent[] = []
     let openingEvent: ParserEvent | undefined | void
+    let stringEscapeCharacterSeen = false
     let done = false
     let inputIndex = 0
     let buffer = this.input.slice(0, this.options.bufferSize)
@@ -81,7 +82,7 @@ export class MemoryParser extends Parser {
           continue
         }
 
-        if (charCode === Token.COMMA) {
+        if (charCode === Token.COMMA && !this.#isInString(eventStack)) {
           if (eventStack[eventStack.length - 1]?.event === 'VALUE_LITERAL_START') {
             const event: ValueLiteralEndParserEvent = { event: 'VALUE_LITERAL_END' }
             eventStack.pop()
@@ -97,21 +98,21 @@ export class MemoryParser extends Parser {
           continue
         }
 
-        if (charCode === Token.COLON) {
+        if (charCode === Token.COLON && !this.#isInString(eventStack)) {
           const event: KeyValueSplitParserEvent = { event: 'KEY_VALUE_SPLIT' }
           eventStack.push(event)
           done = yield event
           continue
         }
 
-        if (charCode === Token.LEFT_SQUARE_BRACKET) {
+        if (charCode === Token.LEFT_SQUARE_BRACKET && !this.#isInString(eventStack)) {
           const event: ArrayStartParserEvent = { event: 'ARRAY_START' }
           eventStack.push(event)
           done = yield event
           continue
         }
 
-        if (charCode === Token.RIGHT_SQUARE_BRACKET) {
+        if (charCode === Token.RIGHT_SQUARE_BRACKET && !this.#isInString(eventStack)) {
           if (eventStack[eventStack.length - 1]?.event === 'VALUE_LITERAL_START') {
             const event: ValueLiteralEndParserEvent = { event: 'VALUE_LITERAL_END' }
             eventStack.pop()
@@ -129,14 +130,14 @@ export class MemoryParser extends Parser {
           continue
         }
 
-        if (charCode === Token.LEFT_CURLY_BRACKET) {
+        if (charCode === Token.LEFT_CURLY_BRACKET && !this.#isInString(eventStack)) {
           const event: ObjectStartParserEvent = { event: 'OBJECT_START' }
           eventStack.push(event)
           done = yield event
           continue
         }
 
-        if (charCode === Token.RIGHT_CURLY_BRACKET) {
+        if (charCode === Token.RIGHT_CURLY_BRACKET && !this.#isInString(eventStack)) {
           if (eventStack[eventStack.length - 1]?.event === 'VALUE_LITERAL_START') {
             const event: ValueLiteralEndParserEvent = { event: 'VALUE_LITERAL_END' }
             eventStack.pop()
@@ -170,7 +171,7 @@ export class MemoryParser extends Parser {
           continue
         }
 
-        if (charCode === Token.DOUBLE_QUOTE) {
+        if (charCode === Token.DOUBLE_QUOTE && (!this.#isInString(eventStack) || !stringEscapeCharacterSeen)) {
           if (
             eventStack[eventStack.length - 1]?.event === 'KEY_VALUE_SPLIT' &&
             eventStack[eventStack.length - 2]?.event === 'OBJECT_START'
@@ -179,6 +180,7 @@ export class MemoryParser extends Parser {
             eventStack.pop()
           }
           if (eventStack[eventStack.length - 1]?.event === 'STRING_START') {
+            stringEscapeCharacterSeen = false
             eventStack.pop()
             done = yield { event: 'STRING_END' }
             continue
@@ -204,7 +206,11 @@ export class MemoryParser extends Parser {
         }
 
         // If processing gets to this point, just return character events
-        // Most likely processing values: true, false, null
+        if (charCode === Token.BACKWARD_SLASH && this.#isInString(eventStack) && !stringEscapeCharacterSeen) {
+          stringEscapeCharacterSeen = true
+        } else {
+          stringEscapeCharacterSeen = false
+        }
         done = yield { event: 'CHARACTER', charCode }
       }
 
@@ -237,17 +243,6 @@ export class MemoryParser extends Parser {
           throw new ParserError('Unexpected end of JSON input')
         }
       }
-
-      // if (eventStack[eventStack.length - 1]?.event === 'STRING_START') {
-      //   throw new ParserError('String never closed.')
-      // } else if (eventStack[eventStack.length - 1]?.event === 'ARRAY_START') {
-      //   throw new ParserError('Array never closed.')
-      // } else if (
-      //   eventStack[eventStack.length - 1]?.event === 'NUMBER_START' ||
-      //   eventStack[eventStack.length - 1]?.event === 'NUMBER_FLOAT_SPLITTER_CHARACTER'
-      // ) {
-      //   yield { event: 'NUMBER_END' }
-      // }
     }
   }
 
@@ -292,7 +287,7 @@ export class MemoryParser extends Parser {
   }
 
   #checkForInvalidToken(charCode: number, eventStack: ParserEvent[]): void {
-    if (eventStack.length === 0) {
+    if (eventStack.length === 0 || this.#isInString(eventStack)) {
       // Let the parser logic process
       return
     }
@@ -352,5 +347,9 @@ export class MemoryParser extends Parser {
       // An object property must start with a double quote or the object must be closed
       throw new SyntaxError("Expected property name or '}' in JSON")
     }
+  }
+
+  #isInString(eventStack: ParserEvent[]): boolean {
+    return eventStack.map((e) => e.event).includes('STRING_START')
   }
 }

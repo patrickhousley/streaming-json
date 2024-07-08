@@ -20,6 +20,7 @@ export enum Token {
 
   // String tokens
   DOUBLE_QUOTE = 0x22, // "
+  BACKWARD_SLASH = 0x5c, // \
 }
 
 export enum NumberValueLiteralToken {
