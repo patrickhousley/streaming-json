@@ -1,11 +1,11 @@
 import { faker } from '@faker-js/faker'
 import { MemoryParser } from './memory-parser'
-import { AllowedWhitespaceToken, Token } from './charset'
+import { AllowedWhitespaceToken } from './charset'
 import { ParserError } from './parser-error'
 
 it('should stop processing when passed true in subsequent call to next', () => {
   const parser = new MemoryParser('"foobar"')
-  const iterator = parser.read()
+  const iterator = parser.parse()
 
   expect(iterator.next()).toEqual(
     expect.objectContaining({
@@ -19,7 +19,7 @@ it('should stop processing when passed true in subsequent call to next', () => {
 
 it('should stop processing when the end of the input is reached', () => {
   const parser = new MemoryParser('""')
-  const iterator = parser.read()
+  const iterator = parser.parse()
 
   expect(iterator.next()).toEqual(
     expect.objectContaining({
@@ -36,10 +36,49 @@ it('should stop processing when the end of the input is reached', () => {
   })
 })
 
+it('should read the input in chunks per the buffer size', () => {
+  const input = faker.lorem.paragraph()
+  const buffer = new TextEncoder().encode(JSON.stringify(input))
+  const parser = new MemoryParser(buffer, { bufferSize: 8 })
+
+  jest.spyOn(buffer, 'slice')
+
+  const iterator = parser.parse()
+  let next = iterator.next()
+  while (!next.done) {
+    next = iterator.next()
+  }
+
+  let loopCount = (input.length + 2) / 8
+  if (loopCount % 1 !== 0) {
+    loopCount = Math.floor(loopCount) + 1
+  }
+
+  for (let index = 0; index < Math.floor(input.length / 8) + 1; index++) {
+    expect(buffer.slice).toHaveBeenNthCalledWith(index + 1, index * 8, index * 8 + 8)
+  }
+})
+
+it('should be able to restart parsing', () => {
+  const input = faker.lorem.paragraph()
+  const buffer = new TextEncoder().encode(JSON.stringify(input))
+  const parser = new MemoryParser(buffer, { bufferSize: 8 })
+
+  const firstIterator = parser.parse()
+  const firstEvent = firstIterator.next()
+  firstIterator.next(true)
+
+  const secondIterator = parser.parse()
+  const secondEvent = secondIterator.next()
+  secondIterator.next(true)
+
+  expect(firstEvent).toEqual(secondEvent)
+})
+
 describe('JSON opening', () => {
   it('should throw an error if the JSON is empty', () => {
     const parser = new MemoryParser('')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     try {
       expect(iterator.next()).toThrow()
@@ -56,7 +95,7 @@ describe('JSON opening', () => {
     AllowedWhitespaceToken.CARRIAGE_RETURN,
   ])('should throw error if input is just whitespace character %s', (input) => {
     const parser = new MemoryParser(String.fromCharCode(input))
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     try {
       expect(iterator.next()).toThrow()
@@ -74,7 +113,7 @@ describe('JSON opening', () => {
         String.fromCharCode(AllowedWhitespaceToken.CARRIAGE_RETURN) +
         '{',
     )
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -90,7 +129,7 @@ describe('JSON opening', () => {
         String.fromCharCode(AllowedWhitespaceToken.CARRIAGE_RETURN) +
         '[',
     )
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -106,7 +145,7 @@ describe('JSON opening', () => {
         String.fromCharCode(AllowedWhitespaceToken.CARRIAGE_RETURN) +
         '"',
     )
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -122,7 +161,7 @@ describe('JSON opening', () => {
         String.fromCharCode(AllowedWhitespaceToken.CARRIAGE_RETURN) +
         input,
     )
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     try {
       expect(iterator.next()).toThrow()
@@ -136,7 +175,7 @@ describe('JSON opening', () => {
 describe('strings', () => {
   it('should properly close a string literal', () => {
     const parser = new MemoryParser('""')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -154,7 +193,7 @@ describe('strings', () => {
   it('should parse the string literal', () => {
     const input = faker.lorem.word()
     const parser = new MemoryParser(`"${input}"`)
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -180,7 +219,7 @@ describe('strings', () => {
 
   it.each(['[', '{', '"', 'a', 1, '.', '$'])('should throw an error if string literal already closed %s', (input) => {
     const parser = new MemoryParser(`""${input}`)
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -201,7 +240,7 @@ describe('strings', () => {
 
   it('should throw an error when string literal is not closed', () => {
     const parser = new MemoryParser(`"foo`)
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -235,7 +274,7 @@ describe('strings', () => {
     const input = '[]{}:,"\\'
     const expected = [91, 93, 123, 125, 58, 44, 92, 34, 92, 92]
     const parser = new MemoryParser(JSON.stringify(input))
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -263,7 +302,7 @@ describe('strings', () => {
 describe('value literals', () => {
   it('should parse the false literal', () => {
     const parser = new MemoryParser('false')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -311,7 +350,7 @@ describe('value literals', () => {
 
   it('should parse the true literal', () => {
     const parser = new MemoryParser('true')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -352,7 +391,7 @@ describe('value literals', () => {
 
   it('should parse the null literal', () => {
     const parser = new MemoryParser('null')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -393,7 +432,7 @@ describe('value literals', () => {
 
   it('should parse number value literal', () => {
     const parser = new MemoryParser('12.34')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -443,7 +482,7 @@ describe('value literals', () => {
 describe('arrays', () => {
   it('should parse the opening and closing of arrays', () => {
     const parser = new MemoryParser('[[]]')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -468,7 +507,7 @@ describe('arrays', () => {
 
   it('should parse value literals inside array', () => {
     const parser = new MemoryParser('[true, false, null, 12.34]')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -640,7 +679,7 @@ describe('arrays', () => {
   it('should yield correct events for array of strings', () => {
     const input = new Array(faker.number.int({ min: 5, max: 10 })).fill(() => null).map(() => faker.lorem.word())
     const parser = new MemoryParser(JSON.stringify(input))
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -687,7 +726,7 @@ describe('arrays', () => {
   it('should yield correct events for array of value literals as strings', () => {
     const input = ['true', 'false', 'null', '12.34']
     const parser = new MemoryParser(JSON.stringify(input))
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -733,7 +772,7 @@ describe('arrays', () => {
 
   it('should throw an error when an incomplete array is not closed by end of input', () => {
     const parser = new MemoryParser('[')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -752,7 +791,7 @@ describe('arrays', () => {
 
   it('should throw an error when an string is not closed before end of array', () => {
     const parser = new MemoryParser('["foo]')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -782,7 +821,7 @@ describe('arrays', () => {
 
   it.each(['.', 'a', '$'])('should throw an error when opening character is invalid %s', (input) => {
     const parser = new MemoryParser(`[${input}]`)
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -803,7 +842,7 @@ describe('arrays', () => {
     const input = '[]{}:,"\\'
     const expected = [91, 93, 123, 125, 58, 44, 92, 34, 92, 92]
     const parser = new MemoryParser(JSON.stringify([input]))
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -839,7 +878,7 @@ describe('arrays', () => {
 describe('objects', () => {
   it('should parse the opening and closing of object', () => {
     const parser = new MemoryParser('{}')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -856,7 +895,7 @@ describe('objects', () => {
 
   it('should parse the opening and closing of arrays of objects', () => {
     const parser = new MemoryParser('[{}, {}]')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -893,7 +932,7 @@ describe('objects', () => {
 
   it('should parse the properties of objects', () => {
     const parser = new MemoryParser('{"foo": "bar", "biz": [], "baz": false}')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -1093,7 +1132,7 @@ describe('objects', () => {
 
   it('should throw an error when object is not closed by end of input', () => {
     const parser = new MemoryParser('{')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -1110,7 +1149,7 @@ describe('objects', () => {
 
   it('should throw an error when object is not closed by end of array', () => {
     const parser = new MemoryParser('[{]')
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,
@@ -1133,7 +1172,7 @@ describe('objects', () => {
     'should throw an error when object property does not start with a double quote %s',
     (input) => {
       const parser = new MemoryParser(`{${input}: ${input}}`)
-      const iterator = parser.read()
+      const iterator = parser.parse()
 
       expect(iterator.next()).toEqual({
         done: false,
@@ -1153,7 +1192,7 @@ describe('objects', () => {
     const input = '[]{}:,"\\'
     const expected = [91, 93, 123, 125, 58, 44, 92, 34, 92, 92]
     const parser = new MemoryParser(JSON.stringify({ foo: input }))
-    const iterator = parser.read()
+    const iterator = parser.parse()
 
     expect(iterator.next()).toEqual({
       done: false,

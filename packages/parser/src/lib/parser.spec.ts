@@ -1,9 +1,15 @@
 import { Parser } from './parser'
+import { ParserEvent } from './parser-event'
 import { ParserOptions } from './parser-options'
 
 class MockParser extends Parser {
   constructor(options?: Partial<ParserOptions>) {
     super(options)
+  }
+
+  override *parse(): Generator<ParserEvent, void, boolean> {
+    yield { event: 'ARRAY_START' }
+    yield { event: 'ARRAY_END' }
   }
 }
 
